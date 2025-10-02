@@ -1,35 +1,57 @@
 const express = require("express");
-const admin = require("firebase-admin");
-
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Firebase init
+const admin = require("firebase-admin");
 const serviceAccount = require("./serviceAccountKey.json");
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com"
+  databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com"  // <-- yaha apna Firebase Realtime Database ka URL daalna
 });
-const db = admin.firestore();
 
-// CPAlead Postback endpoint
+const db = admin.database();
+const firestore = admin.firestore();
+
 app.get("/postback", async (req, res) => {
-  const { subid, amount } = req.query;
-
-  if (!subid || !amount) {
-    return res.status(400).send("Missing subid or amount");
-  }
-
   try {
-    await db.collection("users").doc(subid).update({
-      coins: admin.firestore.FieldValue.increment(parseInt(amount))
-    });
+    const { subid, payout, transactionId } = req.query;
 
-    return res.send("Coins added");
+    if (!subid || !payout || !transactionId) {
+      return res.status(400).send("❌ Missing subid, payout or transactionId");
+    }
+
+    // Coins conversion logic (1$ = 100 coins)
+    const coins = Math.floor(parseFloat(payout) * 100);
+
+    // ---- Realtime Database Update ----
+    const userRefRT = db.ref(`users/${subid}/coins`);
+    const snapshot = await userRefRT.once("value");
+    let currentCoinsRT = snapshot.val() || 0;
+    await userRefRT.set(currentCoinsRT + coins);
+
+    // ---- Firestore Update ----
+    const userRefFS = firestore.collection("users").doc(subid);
+    const userDoc = await userRefFS.get();
+    let currentCoinsFS = 0;
+    if (userDoc.exists) {
+      currentCoinsFS = userDoc.data().coins || 0;
+    }
+    await userRefFS.set(
+      { coins: currentCoinsFS + coins },
+      { merge: true }
+    );
+
+    console.log(`✅ User ${subid} credited with ${coins} coins (payout: $${payout})`);
+    return res.status(200).send(`✅ ${coins} coins added to user ${subid}`);
   } catch (err) {
-    console.error(err);
-    return res.status(500).send("Error updating coins");
+    console.error("❌ Error in postback:", err);
+    return res.status(500).send("Server Error");
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Root check
+app.get("/", (req, res) => {
+  res.send("🚀 CPAlead Postback Server Running");
+});
+
+module.exports = app;
