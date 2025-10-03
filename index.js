@@ -6,10 +6,11 @@ const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://earn-captcha-bot-latest-default-rtdb.firebaseio.com/"
+  databaseURL: "https://earn-captcha-bot-latest-default-rtdb.firebaseio.com"
 });
 
 const db = admin.database();
+const firestore = admin.firestore();
 
 app.get("/postback", async (req, res) => {
   try {
@@ -21,24 +22,38 @@ app.get("/postback", async (req, res) => {
       return res.status(400).send("❌ Missing subid, payout or transactionId");
     }
 
-    // payout ko coins me convert karo (agar 1$ = 100 coins hai)
+    // Coins conversion (1$ = 100 coins)
     const coins = Math.floor(parseFloat(payout) * 100);
 
     // Realtime DB update
-    const userRef = db.ref(`users/${subid}/coins`);
-    const snapshot = await userRef.once("value");
-    let currentCoins = snapshot.val() || 0;
-    await userRef.set(currentCoins + coins);
+    const userRefRT = db.ref(`users/${subid}/coins`);
+    const snapshot = await userRefRT.once("value");
+    let currentCoinsRT = snapshot.val() || 0;
+    await userRefRT.set(currentCoinsRT + coins);
 
-    return res.status(200).send(`✅ ${coins} coins added to ${subid}`);
+    // Firestore update
+    const userRefFS = firestore.collection("users").doc(subid);
+    const userDoc = await userRefFS.get();
+    let currentCoinsFS = 0;
+    if (userDoc.exists) {
+      currentCoinsFS = userDoc.data().coins || 0;
+    }
+    await userRefFS.set(
+      { coins: currentCoinsFS + coins },
+      { merge: true }
+    );
+
+    console.log(`✅ User ${subid} credited with ${coins} coins (payout: $${payout})`);
+    return res.status(200).send(`✅ ${coins} coins added to user ${subid}`);
   } catch (err) {
     console.error("❌ Error in postback:", err);
-    return res.status(500).send("Server Error");
+    // 🔴 Error ko response me show karenge
+    return res.status(500).send("❌ Server Error: " + err.message);
   }
 });
 
 app.get("/", (req, res) => {
-  res.send("🚀 CPAlead Postback Server Running with Firebase");
+  res.send("🚀 CPAlead Postback Server Running");
 });
 
 module.exports = app;
