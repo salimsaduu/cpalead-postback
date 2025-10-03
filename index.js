@@ -6,7 +6,7 @@ const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com"  // <-- yaha apna Firebase Realtime Database ka URL daalna
+  databaseURL: "https://earn-captcha-bot-latest-default-rtdb.firebaseio.com"  // ✅ Correct Firebase Realtime DB URL
 });
 
 const db = admin.database();
