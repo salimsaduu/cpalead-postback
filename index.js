@@ -1,6 +1,16 @@
 const express = require("express");
 const app = express();
 
+const admin = require("firebase-admin");
+const serviceAccount = require("./serviceAccountKey.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://earn-captcha-bot-latest-default-rtdb.firebaseio.com/"
+});
+
+const db = admin.database();
+
 app.get("/postback", async (req, res) => {
   try {
     console.log("👉 Postback received:", req.query);
@@ -11,17 +21,24 @@ app.get("/postback", async (req, res) => {
       return res.status(400).send("❌ Missing subid, payout or transactionId");
     }
 
-    // Sirf test ke liye
-    return res.status(200).send(`✅ Postback OK: ${subid} got payout $${payout}, txn ${transactionId}`);
+    // payout ko coins me convert karo (agar 1$ = 100 coins hai)
+    const coins = Math.floor(parseFloat(payout) * 100);
+
+    // Realtime DB update
+    const userRef = db.ref(`users/${subid}/coins`);
+    const snapshot = await userRef.once("value");
+    let currentCoins = snapshot.val() || 0;
+    await userRef.set(currentCoins + coins);
+
+    return res.status(200).send(`✅ ${coins} coins added to ${subid}`);
   } catch (err) {
     console.error("❌ Error in postback:", err);
     return res.status(500).send("Server Error");
   }
 });
 
-// Root check
 app.get("/", (req, res) => {
-  res.send("🚀 CPAlead Postback Server Running (Test Mode)");
+  res.send("🚀 CPAlead Postback Server Running with Firebase");
 });
 
 module.exports = app;
